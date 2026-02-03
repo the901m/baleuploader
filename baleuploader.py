@@ -83,6 +83,6 @@ if len(sys.argv) != 2:
 
 file_path_in_system = folder_path + sys.argv[1]
 
-main_message = bot.send_message(chat_id, f"I started the process for {sys.argv[1]}.")
+main_message = bot.send_message(chat_id, "I started the process.")
 
 compress_and_upload_files(file_path_in_system, main_message)
