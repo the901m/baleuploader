@@ -4,7 +4,7 @@ import os, subprocess
 import time
 import psutil, shutil
 import sys
-
+import argparse  # Added for flag handling
 
 apihelper.API_URL = "https://tapi.bale.ai/bot{0}/{1}"
 apihelper.CONNECT_TIMEOUT = 600
@@ -16,21 +16,16 @@ API_KEY = ""
 
 bot = telebot.TeleBot(API_KEY)
 
-# choose a folder that your files are stored there
-folder_path = "path/of/your/folder"
-# choose a password for your compressed files
-password = ""
-# enter you chat_id
+# --- CONFIGURATION ---
+folder_path = "path/of/your/folder/"
+DEFAULT_PASSWORD = "your_default_password" 
 chat_id = 123456789
 
-
-def compress_and_upload_files(file_path_in_system, process_status_msg):
-
+def compress_and_upload_files(file_path_in_system, process_status_msg, active_password):
     time_in_nanosec = str(os.stat(file_path_in_system).st_ctime_ns)
+    output_dir = os.path.join(folder_path, "temp_" + time_in_nanosec)
 
-    output_dir = folder_path + "temp_" + time_in_nanosec
-
-    if os.path.exists(output_dir) == False:
+    if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
         command = [
@@ -38,51 +33,54 @@ def compress_and_upload_files(file_path_in_system, process_status_msg):
             "a",
             "-mx=0",
             "-mhe=on",
-            f"-p{password}",
+            f"-p{active_password}", 
             "-v50m",
             f"{output_dir}/{time_in_nanosec}.7z",
             file_path_in_system,
         ]
         subprocess.run(command)
 
-    # File to store the last sent file name
     last_sent_file_path = os.path.join(output_dir, "last_sent_file.txt")
-
-    # Read the last sent file name if it exists
-    last_sent_file = None
     last_sent_file_index = 0
     if os.path.exists(last_sent_file_path):
         with open(last_sent_file_path, "r") as f:
             last_sent_file = f.read().strip()
-            last_sent_file_index = int(last_sent_file[-3:])
+            try:
+                last_sent_file_index = int(last_sent_file[-3:])
+            except:
+                last_sent_file_index = 0
 
-    # Get the list of files to send, excluding the last_sent_file.txt
-    files_to_send = sorted(
-        f for f in os.listdir(output_dir) if f != "last_sent_file.txt"
-    )
+    files_to_send = sorted(f for f in os.listdir(output_dir) if f != "last_sent_file.txt")
 
-    bot.edit_message_text(
-        f"sending the {time_in_nanosec}", chat_id, process_status_msg.id
-    )
+    bot.edit_message_text(f"sending the {time_in_nanosec}", chat_id, process_status_msg.id)
 
     for file_to_send in files_to_send[last_sent_file_index:]:
-        print(file_to_send)
-        with open(output_dir + "/" + file_to_send, "rb") as file_to_sent_opened:
-            bot.send_document(chat_id, file_to_sent_opened)
-
-        # Update the last sent file name
+        print(f"Uploading: {file_to_send}")
+        file_full_path = os.path.join(output_dir, file_to_send)
+        with open(file_full_path, "rb") as f_opened:
+            bot.send_document(chat_id, f_opened)
+        
         with open(last_sent_file_path, "w") as f:
             f.write(file_to_send)
 
     shutil.rmtree(output_dir)
 
+# --- ARGUMENT PARSING ---
+parser = argparse.ArgumentParser(description="Upload files with optional password flag.")
+# The filename is a positional argument (mandatory)
+parser.add_argument("filename", help="Name of the file in the folder_path")
+# The password is an optional flag (-p)
+parser.add_argument("-p", "--password", help="Password for the zip file", default=DEFAULT_PASSWORD)
 
-if len(sys.argv) != 2:
-    print("Usage: python3 file.py <value>")
+args = parser.parse_args()
+
+# Construct final path
+file_path_in_system = os.path.join(folder_path, args.filename)
+
+if os.path.exists(file_path_in_system):
+    print(f"Using password: {args.password}")
+    main_message = bot.send_message(chat_id, "I started the process.")
+    compress_and_upload_files(file_path_in_system, main_message, args.password)
+else:
+    print(f"Error: File {file_path_in_system} does not exist.")
     sys.exit(1)
-
-file_path_in_system = folder_path + sys.argv[1]
-
-main_message = bot.send_message(chat_id, "I started the process.")
-
-compress_and_upload_files(file_path_in_system, main_message)
